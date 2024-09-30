@@ -2,49 +2,57 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
-	"time"
+	"os"
 
-	"netcat/srm"
+	"netcat/utils"
+)
+
+var (
+	ADRESS = "0.0.0.0:"
+	PORT   = "8989"
 )
 
 func main() {
-	data, err := srm.Read("./bitri9")
-	if err != nil {
-		fmt.Println(err)
+	if len(os.Args) != 1 {
+		if len(os.Args) == 2 {
+			PORT = Atoi(os.Args[1])
+		} else {
+			fmt.Fprintln(os.Stderr, "[USAGE]: ./TCPChat $port")
+			return
+		}
 	}
 
-	fmt.Println(string(data))
-	ln, err := net.Listen("tcp", ":8080")
+	ln, err := net.Listen("tcp", ADRESS+PORT)
 	if err != nil {
-		// handle error
+		PORT = "8989"
+		fmt.Println("invalid port...using default port", PORT)
+		ln, err = net.Listen("tcp", ADRESS+PORT)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return
+		}
 	}
+
+	fmt.Println("Listening on the port :" + PORT)
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			// handle error
+			log.Fatal(err)
 		}
-		go handleConnection(conn)
+		go utils.HandleConnection(conn, PORT)
 	}
 }
 
-func handleConnection(c net.Conn) {
-	f := "Welcome to TCP-Chat!\n         _nnnn_\n        dGGGGMMb\n       @p~qp~~qMb\n       M|@||@) M|\n       @,----.JM|\n      JS^\\__/  qKL\n     dZP        qKRb\n    dZP          qKKb\n   fZP            SMMb\n   HZM            MMMM\n   FqM            MMMM\n __| \".        |\\dS\"qML\n |    `.       | `' \\Zq\n_)      \\.___.,|     .'\n\\____   )MMMMMP|   .'\n     `-'       `--'\n[ENTER YOUR NAME]:"
-	c.Write([]byte(f))
-
-	g := string(time.Now().Local().Format("[" + time.DateTime + "] ["))
-
-	b := make([]byte, 1)
-	for {
-		c.Read(b)
-		if b[0] == '\n' {
-			break
+func Atoi(s string) string {
+	for _, v := range s {
+		if !(v <= '9' && v >= '0') {
+			fmt.Fprintln(os.Stderr, "invalid port...using default port", PORT)
+			return PORT
 		}
-		g += string(b)
 	}
-	var conec struct {
-		name string
-	}
-	conec.name = g
-	c.Write([]byte(g + "]"))
+
+	return s
 }
