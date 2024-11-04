@@ -42,7 +42,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		go utils.HandleConnection(conn, PORT)
+		go utils.HandleConnection(&conn, PORT)
 	}
 }
 
