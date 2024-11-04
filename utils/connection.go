@@ -12,64 +12,56 @@ import (
 
 type User struct {
 	sync.Mutex
-	max   int
 	USERS map[string]net.Conn
-}
-
-// NewUser creates and initializes a new User instance
-func NewUser(max int) *User {
-	return &User{
-		max:   max,
-		USERS: make(map[string]net.Conn),
-	}
 }
 
 var (
 	port   = "8989"
-	netcat = NewUser(10)
+	netcat = User{
+		USERS: make(map[string]net.Conn),
+	}
 )
 
 func HandleConnection(conn *net.Conn, PORT string) {
 	port = PORT
-	if netcat.max == 0 {
+	if len(netcat.USERS) == 10 {
 		(*conn).Write([]byte("Room is full only 10 people allowed"))
 		return
 	}
 	greeting := "Welcome to TCP-Chat!\n         _nnnn_\n        dGGGGMMb\n       @p~qp~~qMb\n       M|@||@) M|\n       @,----.JM|\n      JS^\\__/  qKL\n     dZP        qKRb\n    dZP          qKKb\n   fZP            SMMb\n   HZM            MMMM\n   FqM            MMMM\n __| \".        |\\dS\"qML\n |    `.       | `' \\Zq\n_)      \\.___.,|     .'\n\\____   )MMMMMP|   .'\n     `-'       `--'"
 	defer (*conn).Close()
 	(*conn).Write([]byte(greeting))
-	name := login((conn))
+	name := login(conn, 0)
 	if name == "" {
+		(*conn).Close()
+		return
 	}
 	chat(conn, &name)
 	disconect(conn, name)
 	netcat.Lock()
 	delete(netcat.USERS, name)
-	netcat.max++
 	netcat.Unlock()
 }
 
-func login(conn *net.Conn) string {
+func login(conn *net.Conn, spam int) string {
+	if spam == 5 {
+		return ""
+	}
 	connFile, err := os.OpenFile("netcat-connection_"+port+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		log.Fatalln(err)
+		return ""
 	}
 	defer connFile.Close()
-	chatFile, err := os.OpenFile("netcat-chat_"+port+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer chatFile.Close()
 	date := time.Now().Format(time.DateTime)
 	username := ""
 	buffer := make([]byte, 1024)
 	(*conn).Write([]byte("\n[ENTER YOUR NAME]:"))
 	for {
 		n, err := (*conn).Read(buffer)
-		if err != nil {
-			return ""
-		}
 		username += string(buffer[:n-1])
+		if err != nil {
+			break
+		}
 		if strings.Contains(string(buffer), "\n") {
 			break
 		}
@@ -77,11 +69,17 @@ func login(conn *net.Conn) string {
 	status := checkUsername(username, conn)
 	if status != "" {
 		(*conn).Write([]byte(status))
-		return login(conn)
+		return login(conn, spam+1)
 	} else {
-		oldchat, _ := os.ReadFile("netcat-chat_" + port + ".log")
-		(*conn).Write(oldchat)
-		(*conn).Write([]byte("[" + date + "][" + username + "]:"))
+		chatFile, err := os.OpenFile("netcat-chat_"+port+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			(*conn).Write([]byte("connot access oldchat\n[" + date + "][" + username + "]:"))
+		} else {
+			defer chatFile.Close()
+			oldchat, _ := os.ReadFile("netcat-chat_" + port + ".log")
+			(*conn).Write(oldchat)
+			(*conn).Write([]byte("[" + date + "][" + username + "]:"))
+		}
 	}
 	for user, Conn := range netcat.USERS {
 		if user != username {
@@ -109,11 +107,10 @@ func checkUsername(username string, conn *net.Conn) string {
 	if !validchars(username) {
 		return "only use latin letters and \"-\""
 	}
-	if netcat.max == 0 {
+	if len(netcat.USERS) == 10 {
 		return "room is full"
 	}
 	netcat.USERS[username] = (*conn)
-	netcat.max--
 	return ""
 }
 
@@ -145,8 +142,8 @@ func chat(Conn *net.Conn, name *string) {
 		}
 	}
 	msg = strings.TrimSpace(msg)
-	if !Validmsg(msg) {
-		(*Conn).Write([]byte("\033[F\033[2K[" + time.Now().Format(time.DateTime) + "][" + (*name) + "]:"))
+	if !Validmsg(msg, Conn) {
+		(*Conn).Write([]byte("\033[2K[" + time.Now().Format(time.DateTime) + "][" + (*name) + "]:"))
 	} else {
 		for name, conn := range netcat.USERS {
 			if conn != (*Conn) {
@@ -164,7 +161,7 @@ func chat(Conn *net.Conn, name *string) {
 func disconect(conn *net.Conn, name string) {
 	connFile, err := os.OpenFile("netcat-connection_"+port+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		log.Fatalln(err)
+		return
 	}
 	defer connFile.Close()
 	for user, c := range netcat.USERS {
@@ -175,15 +172,18 @@ func disconect(conn *net.Conn, name string) {
 	connFile.Write([]byte(name + " has left our chat...\n"))
 }
 
-func Validmsg(msg string) bool {
+func Validmsg(msg string, conn *net.Conn) bool {
 	if len(msg) > 255 {
+		fmt.Fprintln((*conn),"message too long....")
 		return false
 	}
 	if msg == "" {
+		fmt.Fprint((*conn),"\033[F")
 		return false
 	}
 	for _, v := range msg {
 		if (v < 32 || v > 126) && (v < 128 || v > 255) {
+			fmt.Fprintln((*conn),"invalid characters....")
 			return false
 		}
 	}
