@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -33,7 +34,6 @@ func HandleConnection(conn *net.Conn, PORT string) {
 	(*conn).Write([]byte(greeting))
 	name := login(conn, 0)
 	if name == "" {
-		(*conn).Close()
 		return
 	}
 	chat(conn, &name)
@@ -45,6 +45,7 @@ func HandleConnection(conn *net.Conn, PORT string) {
 
 func login(conn *net.Conn, spam int) string {
 	if spam == 5 {
+		(*conn).Write([]byte("\033[2K\rtoo many attempts"))
 		return ""
 	}
 	connFile, err := os.OpenFile("netcat-connection_"+port+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -58,6 +59,9 @@ func login(conn *net.Conn, spam int) string {
 	(*conn).Write([]byte("\n[ENTER YOUR NAME]:"))
 	for {
 		n, err := (*conn).Read(buffer)
+		if err == io.EOF {
+			return ""
+		}
 		username += string(buffer[:n-1])
 		if err != nil {
 			break
@@ -68,6 +72,10 @@ func login(conn *net.Conn, spam int) string {
 	}
 	status := checkUsername(username, conn)
 	if status != "" {
+		if status == "\033[F\033[2Kroom is full" {
+			(*conn).Write([]byte(status))
+			return ""
+		}
 		(*conn).Write([]byte(status))
 		return login(conn, spam+1)
 	} else {
@@ -107,8 +115,8 @@ func checkUsername(username string, conn *net.Conn) string {
 	if !validchars(username) {
 		return "only use latin letters and \"-\""
 	}
-	if len(netcat.USERS) == 10 {
-		return "room is full"
+	if len(netcat.USERS) == 2 {
+		return "\033[F\033[2Kroom is full"
 	}
 	netcat.USERS[username] = (*conn)
 	return ""
@@ -174,16 +182,16 @@ func disconect(conn *net.Conn, name string) {
 
 func Validmsg(msg string, conn *net.Conn) bool {
 	if len(msg) > 255 {
-		fmt.Fprintln((*conn),"message too long....")
+		fmt.Fprintln((*conn), "message too long....")
 		return false
 	}
 	if msg == "" {
-		fmt.Fprint((*conn),"\033[F")
+		fmt.Fprint((*conn), "\033[F")
 		return false
 	}
 	for _, v := range msg {
 		if (v < 32 || v > 126) && (v < 128 || v > 255) {
-			fmt.Fprintln((*conn),"invalid characters....")
+			fmt.Fprintln((*conn), "invalid characters....")
 			return false
 		}
 	}
